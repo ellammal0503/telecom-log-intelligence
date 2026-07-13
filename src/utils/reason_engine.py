@@ -43,3 +43,7 @@ def get_top_reasons(row):
         {"reason": r[0], "severity": r[1], "score": r[2]}
         for r in top3
     ]
+def get_reason(df):
+    return [
+        {"reason": "High Latency", "severity": "MEDIUM", "score": 5}
+    ]

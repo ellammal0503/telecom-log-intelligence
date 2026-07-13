@@ -1,94 +1,115 @@
 import streamlit as st
 import requests
+import pandas as pd
 
-st.set_page_config(page_title="Telecom Dashboard", layout="wide")
+st.set_page_config(page_title="Telecom NOC Dashboard", layout="wide")
 
-st.title("📡 Telecom Failure Intelligence Dashboard")
+# ---------------- HEADER ----------------
+st.title("📡 Telecom Network Operations Center")
+st.markdown("Real-time Call Analysis & Root Cause Detection")
 
-# -----------------------------
+# ---------------- SIDEBAR INPUT ----------------
+st.sidebar.header("📥 Input Logs")
 
-# INPUTS
+logs = st.sidebar.text_area(
+    "Paste Telecom Logs",
+    height=250,
+    placeholder="""[RRC] event=RRC_SETUP_REQUEST sinr=3
+[SIP] event=100 Trying
+[SIP] event=100 Trying
+[SIP] event=503 Service Unavailable"""
+)
 
-# -----------------------------
+analyze_btn = st.sidebar.button("🔍 Analyze Call")
 
-st.sidebar.header("Input Parameters")
 
-rrc_fail = st.sidebar.number_input("RRC Failures", 0, 10, 0)
-ho_fail = st.sidebar.number_input("Handover Failures", 0, 10, 0)
-packet_loss = st.sidebar.number_input("Packet Loss", 0, 10, 0)
-latency = st.sidebar.number_input("Latency", 0, 10, 0)
-bgp_down = st.sidebar.number_input("BGP Down", 0, 5, 0)
-if_down = st.sidebar.number_input("Interface Down", 0, 5, 0)
+# ---------------- HELPER FUNCTION ----------------
+def parse_logs_to_df(log_text):
+    rows = []
+    for line in log_text.split("\n"):
+        if line.strip():
+            rows.append({"log": line})
+    return pd.DataFrame(rows)
 
-# -----------------------------
 
-# BUTTON
+# ---------------- MAIN ----------------
+if analyze_btn:
 
-# -----------------------------
+    if not logs.strip():
+        st.warning("⚠️ Please paste logs")
+        st.stop()
 
-if st.button(" Predict"):
+    with st.spinner("Analyzing..."):
+        try:
+            response = requests.post(
+                "http://127.0.0.1:8000/analyze",
+                json={"logs": logs}
+            )
 
-#```
-    payload = {
-    "rrc_fail": rrc_fail,
-    "ho_fail": ho_fail,
-    "packet_loss": packet_loss,
-    "latency": latency,
-    "bgp_down": bgp_down,
-    "if_down": if_down
-    }
+            result = response.json()
 
-    try:
-        response = requests.post(
-            "http://127.0.0.1:8000/predict",
-        json=payload
+            if "error" in result:
+                st.error(result["error"])
+                st.stop()
+
+        except Exception as e:
+            st.error(f"API Failed: {e}")
+            st.stop()
+
+    prediction = result["prediction"]
+    confidence = result["confidence"]
+    factors = result["key_factors"]
+    explanation = result["explanation"]
+
+    # ---------------- KPI CARDS ----------------
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        status_color = "red" if prediction == "FAIL" else "green"
+        st.markdown(
+            f"""
+            <div style="background-color:{status_color};padding:20px;border-radius:10px">
+            <h3 style="color:white">Prediction</h3>
+            <h1 style="color:white">{prediction}</h1>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-        result = response.json()
+    with col2:
+        st.metric("Confidence", f"{confidence:.2f}")
 
-    # -----------------------------
-    # KPI CARDS
-    # -----------------------------
-        col1, col2, col3 = st.columns(3)
+    with col3:
+        severity = "CRITICAL" if confidence > 0.8 and prediction == "FAIL" else "NORMAL"
+        st.metric("Severity", severity)
 
-        with col1:
-            if result["prediction"] == "FAIL":
-                st.error(" FAIL")
-            else:
-                st.success(" SUCCESS")
+    st.divider()
 
-        with col2:
-            st.metric("Probability", f"{result['probability']*100:.1f}%")
+    # ---------------- RCA PANEL ----------------
+    col_left, col_right = st.columns(2)
 
-        with col3:
-            severity = "LOW"
-            if result.get("top_reasons"):
-                severity = result["top_reasons"][0]["severity"]
+    with col_left:
+        st.subheader("🔎 Root Cause Factors")
+        for f in factors:
+            st.markdown(f"• {f}")
 
-            if severity == "HIGH":
-                st.error("HIGH")
-            elif severity == "MEDIUM":
-                st.warning("MEDIUM")
-            else:
-                st.success("LOW")
+    with col_right:
+        st.subheader("🧠 AI Explanation")
+        st.info(explanation)
 
-        st.markdown("---")
+    st.divider()
 
-    # -----------------------------
-    # TOP REASONS
-    # -----------------------------
-        st.subheader("🔍 Top Root Causes")
+    # ---------------- TIMELINE ----------------
+    st.subheader("📜 Event Timeline")
 
-        for r in result.get("top_reasons", []):
-            text = f"{r['reason']} (Score: {r['score']})"
+    df = parse_logs_to_df(logs)
+    st.dataframe(df, use_container_width=True)
 
-            if r["severity"] == "HIGH":
-                st.error(f" {text}")
-            elif r["severity"] == "MEDIUM":
-                st.warning(f" {text}")
-            else:
-                st.success(f" {text}")
+    st.divider()
 
-    except Exception as e:
-        st.error(f"API Error: {e}")
-#```
+    # ---------------- RAW RESPONSE ----------------
+    with st.expander("📦 Raw API Response"):
+        st.json(result)
+
+else:
+    st.info("Paste logs and click Analyze to view dashboard")

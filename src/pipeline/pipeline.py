@@ -1,41 +1,35 @@
 import pandas as pd
 import joblib
 # src.utils.reason_engine import 
-import joblib
 
-model = None
+rf = joblib.load("models/rf_model.pkl")
+xgb = joblib.load("models/xgb_model.pkl")
+scaler = joblib.load("models/scaler.pkl")
 
-def load_model():
-    global model
-    if model is None:
-        model = joblib.load("models/rf_model.pkl")
 
-load_model()
+def predict_with_reason(logs):
 
-# Load once (not per request)
-model = joblib.load("models/rf_model.pkl")
+    features = extract_features_from_logs(logs)
+    X = scaler.transform([features])
 
-FEATURES = [
-    "rrc_fail",
-    "ho_fail",
-    "packet_loss",
-    "latency",
-    "bgp_down",
-    "if_down"
-]
+    # ---- Predictions ----
+    rf_prob = rf.predict_proba(X)[0][1]
+    xgb_prob = xgb.predict_proba(X)[0][1]
 
-def predict_with_reason(input_data: dict):
+    # ---- Ensemble ----
+    final_prob = (rf_prob + xgb_prob) / 2
+    pred = 1 if final_prob > 0.5 else 0
 
-    df = pd.DataFrame([input_data])
+    # ---- Reasons (same logic) ----
+    reasons = []
 
-    pred = model.predict(df[FEATURES])[0]
-    prob = model.predict_proba(df[FEATURES])[0][1]
+    if features["sip_trying"] > 2:
+        reasons.append("High SIP retries")
 
-    reason, severity = get_reason(input_data)
+    if features["avg_sinr"] < 5:
+        reasons.append("Low SINR")
 
-    return {
-        "prediction": "FAIL" if pred == 1 else "SUCCESS",
-        "probability": round(prob, 3),
-        "reason": reason,
-        "severity": severity
-    }
+    if features["rrc_reconfig"] > 1:
+        reasons.append("Frequent RRC reconfiguration")
+
+    return pred, reasons, final_prob

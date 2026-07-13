@@ -1,214 +1,264 @@
-# 📡 Telecom Log Intelligence Platform
-
-An AI-powered system to **predict telecom call failures** and provide **top root-cause analysis** using SIP, RRC, and CSR logs.
-
----
+# 📡 Telecom Log Intelligence
 
 ## 🚀 Overview
 
-Modern telecom networks generate massive logs across multiple layers:
+Modern telecom networks generate massive volumes of signaling logs and KPI data.
+Most troubleshooting today is **reactive, manual, and slow**.
 
-* SIP (Call signaling)
-* RRC (Radio control)
-* CSR (Backhaul / router logs)
+This project builds an **AI-powered Telecom Log Intelligence System** that:
 
-Manual troubleshooting is slow and reactive.
-
-👉 This project builds an **end-to-end ML pipeline** that:
-
-* Predicts call success/failure
-* Identifies **top 3 root causes**
-* Displays results in a **real-time dashboard**
+* Detects call failures automatically
+* Identifies root causes (RCA)
+* Generates human-readable explanations using LLM
+* Visualizes insights in a NOC-style dashboard
 
 ---
 
-## 🧠 Key Features
+## 🎯 Key Features
 
-✅ Synthetic telecom log generator (SIP + RRC + CSR)
-✅ Feature engineering across multiple network layers
-✅ Machine Learning model (Random Forest)
-✅ Root Cause Engine (Top 3 ranked reasons)
-✅ FastAPI backend (production-ready API)
-✅ Streamlit dashboard (NOC-style UI)
+### 🔍 Intelligent Failure Detection
+
+* Ensemble ML model (**Random Forest + XGBoost**)
+* Predicts: `SUCCESS` or `FAIL`
+* Confidence scoring
 
 ---
 
-## 📊 Sample Output
+### 📊 Root Cause Analysis (RCA)
 
+Automatically detects key failure drivers:
+
+* Low SINR
+* High latency
+* SIP failures (503 errors)
+* RRC instability
+
+---
+
+### 🤖 LLM-Based Explanation
+
+* Powered by **Ollama (LLaMA3)**
+* Converts logs → concise RCA explanation
+* Production-style summary for NOC engineers
+
+---
+
+### 🖥️ NOC Dashboard (Streamlit)
+
+* KPI Cards (Prediction, Confidence)
+* RCA Panel (Key Factors)
+* Timeline view of logs
+* Real-time log analysis
+
+---
+
+## 🏗️ Architecture
+
+```id="arch01"
+Logs → Feature Extraction → ML Models → Rule Engine → LLM → FastAPI → Streamlit Dashboard
 ```
+
+---
+
+## ⚙️ Tech Stack
+
+* **Backend:** FastAPI
+* **ML Models:** Scikit-learn, XGBoost
+* **LLM:** Ollama (LLaMA3)
+* **Frontend:** Streamlit
+* **Deployment:** Docker
+
+---
+
+## 📥 Input Format (Logs)
+
+Paste telecom logs like:
+
+```id="log01"
+[RRC] event=RRC_SETUP_REQUEST | sinr=3
+[SIP] event=100 Trying
+[SIP] event=100 Trying
+[SIP] event=503 Service Unavailable
+```
+
+---
+
+## 📤 Output
+
+```id="out01"
 Prediction: FAIL
-Probability: 0.92
+Confidence: 0.97
 
-Top Reasons:
-1. Backhaul Failure (BGP Down) | HIGH
-2. High Packet Loss            | HIGH
-3. Handover Failure            | MEDIUM
+Key Factors:
+- Low SINR
+- SIP service failure
+
+Explanation:
+Call failed due to poor radio conditions and signaling issues.
 ```
 
 ---
 
-## 🏗️ Project Architecture
+## 🧪 API Usage
 
-```
-Data Generation → Feature Engineering → Model Training
-        ↓
-    FastAPI Backend (/predict)
-        ↓
- Streamlit Dashboard (UI)
+### Health Check
+
+```id="api01"
+GET /health
 ```
 
 ---
 
-## 📂 Project Structure
+### Analyze Logs
 
+```id="api02"
+POST /analyze
 ```
-telecom-log-intelligence/
-│
-├── data/
-│   ├── raw/
-│   └── processed/
-│
-├── models/
-│   └── rf_model.pkl
-│
-├── src/
-│   ├── ingestion/         # Log generators
-│   ├── features/          # Feature engineering
-│   ├── models/            # Training logic
-│   ├── pipeline/          # Prediction logic
-│   ├── utils/             # Reason engine
-│   └── api/               # FastAPI app
-│
-├── dashboard/
-│   └── app.py             # Streamlit UI
-│
-├── run_pipeline.py
-├── requirements.txt
-└── README.md
+
+Request:
+
+```json id="api03"
+{
+  "logs": "your telecom logs here"
+}
 ```
 
 ---
 
-## ⚙️ Installation
+## 🖥️ Run Locally
 
-### 1. Clone repo
+### 1️⃣ Create virtual environment
 
-```bash
-git clone https://github.com/ellammal0503/telecom-log-intelligence.git
-cd telecom-log-intelligence
-```
-
-### 2. Create virtual environment
-
-```bash
+```bash id="loc01"
 python -m venv .venv
-source .venv/bin/activate   # Mac/Linux
+source .venv/bin/activate
 ```
 
-### 3. Install dependencies
+---
 
-```bash
+### 2️⃣ Install dependencies
+
+```bash id="loc02"
 pip install -r requirements.txt
 ```
 
 ---
 
-## 🚀 Run the Project
+### 3️⃣ Start FastAPI
 
-### Step 1: Run Pipeline
-
-```bash
-python run_pipeline.py
-```
-
-This will:
-
-* Generate logs
-* Build features
-* Train model
-* Save model in `models/`
-
----
-
-### Step 2: Start API
-
-```bash
+```bash id="loc03"
 uvicorn src.api.main:app --reload
 ```
 
-👉 API Docs:
-http://127.0.0.1:8000/docs
-
 ---
 
-### Step 3: Start Dashboard
+### 4️⃣ Start Streamlit
 
-```bash
+```bash id="loc04"
 streamlit run dashboard/app.py
 ```
 
-👉 Open:
-http://localhost:8501
+---
+
+## 🤖 LLM Setup (Ollama – Required)
+
+### 1️⃣ Install Ollama
+
+```bash id="oll01"
+brew install ollama
+```
 
 ---
 
-## 🔍 Root Cause Engine
+### 2️⃣ Start Ollama Server (MANDATORY)
 
-The system explains failures using:
+```bash id="oll02"
+ollama serve
+```
 
-* Backhaul issues (BGP Down)
-* Packet loss
-* Latency spikes
-* RRC failures
-* Handover failures
-* SIP errors
-
-👉 Returns **Top 3 ranked reasons with severity**
+👉 Keep this running in a separate terminal
 
 ---
 
-## 📈 Model Details
+### 3️⃣ Pull Model
 
-* Algorithm: Random Forest Classifier
-* Input: Engineered telecom KPIs
-* Output: Failure prediction + probability
-* Explainability: Rule-based reason engine
-
----
-
-## 🎯 Use Cases
-
-* Telecom NOC monitoring
-* Call failure analysis
-* Network troubleshooting automation
-* AI-based observability systems
+```bash id="oll03"
+ollama pull llama3
+```
 
 ---
 
-## ⚠️ Note
+### 4️⃣ Test Model
 
-This is a **simulation project**, not production data.
-Logs are synthetically generated to mimic real telecom scenarios.
-
----
-
-## 🚀 Future Improvements
-
-* Real log ingestion (Wireshark / QXDM)
-* Time-series anomaly detection
-* Alerting system
-* Grafana / Prometheus integration
-* LLM-based log summarization
+```bash id="oll04"
+ollama run llama3
+```
 
 ---
 
-## 👤 Author
+## ⚠️ Important Notes
 
-Karthick Kumarasamy
-Telecom QA → AI/ML Engineer
+* If `ollama serve` is NOT running:
+
+  * Prediction works
+  * Explanation will show:
+
+    ```
+    LLM not available
+    ```
+
+* First model download is ~4–5 GB
 
 ---
 
-## ⭐ If you like this project
+## 🐳 Docker Run
 
-Give it a star ⭐ on GitHub!
+```bash id="dock01"
+docker build -t telecom-ai .
+docker run -p 8000:8000 -p 8501:8501 telecom-ai
+```
+
+---
+
+## 🌐 Access
+
+* API Docs → http://localhost:8000/docs
+* Dashboard → http://localhost:8501
+
+---
+
+## 📌 Project Highlights
+
+* Combines **ML + Rule Engine + LLM**
+* Real telecom debugging use case
+* Production-style API + UI
+* Strong fit for:
+
+  * Telecom Analytics
+  * Data Science
+  * AI/ML Engineering
+
+---
+
+## 🔮 Future Enhancements
+
+* RAG-based log intelligence (vector DB)
+* Multi-cell correlation analysis
+* Real-time streaming (Kafka)
+* Grafana / NOC integration
+
+---
+**Author:** Karthick Kumarasamy
+**M.Tech – Data Science & Machine Learning**
+
+---
+
+## 🔗 GitHub Repository
+
+https://github.com/ellammal0503/telecom-log-intelligence.git
+
+---
+
+## ⭐ If you find this useful
+
+Give a ⭐ and connect for collaboration!

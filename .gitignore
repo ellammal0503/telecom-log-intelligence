@@ -1,1 +1,24 @@
-data/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Models (optional if large)
+#*.pkl
+
+# Mac system files
+.DS_Store
+
+# Logs
+#*.log
+
+# Streamlit cache
+.streamlit/
+
+# Docker
+*.tar

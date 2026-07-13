@@ -1,9 +1,6 @@
-#from src.ingestion.generate_logs import generate_all
-from src.ingestion.generate_logs import generate_logs
-from src.features.build_features import build_features
-from src.models.train_model import train_model
 from src.ingestion.generate_logs import generate_all
-from src.features.build_features import run_feature_pipeline
+#from src.ingestion.generate_logs import generate_logs
+from src.features.build_features import build_features
 from src.models.train_model import train_model
 
 def run_pipeline():
@@ -11,7 +8,7 @@ def run_pipeline():
     generate_all()
 
     print("Step 2: Building features...")
-    run_feature_pipeline()
+    build_features()
 
     print("Step 3: Training model...")
     train_model()

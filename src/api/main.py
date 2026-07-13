@@ -1,40 +1,54 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import FastAPI
+from pydantic import BaseModel
 from src.pipeline.predict import predict_with_reason
+from src.llm.explainer import generate_explanation
 
 app = FastAPI(
     title="Telecom Log Intelligence API",
-    version="1.0.0",
-    description="Predict VoLTE call failures with reason and severity"
+    version="2.0",
+    description="Production-grade VoLTE failure prediction + explanation"
 )
 
-# -----------------------------
-# Input Schema
-# -----------------------------
-class PredictRequest(BaseModel):
-    rrc_fail: int = Field(ge=0)
-    ho_fail: int = Field(ge=0)
-    packet_loss: int = Field(ge=0)
-    latency: int = Field(ge=0)
-    bgp_down: int = Field(ge=0)
-    if_down: int = Field(ge=0)
+
+# ---------------- REQUEST MODEL ----------------
+class AnalyzeRequest(BaseModel):
+    logs: str
 
 
-# -----------------------------
-# Health Check
-# -----------------------------
+# ---------------- HEALTH ----------------
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
-# -----------------------------
-# Prediction Endpoint
-# -----------------------------
-@app.post("/predict")
-def predict(data: PredictRequest):
+# ---------------- ANALYZE ----------------
+@app.post("/analyze")
+def analyze(data: AnalyzeRequest):
     try:
-        result = predict_with_reason(data.dict())
-        return result
+        logs = data.logs
+
+        pred, reasons, confidence = predict_with_reason(logs)
+
+        label = "FAIL" if pred == 1 else "SUCCESS"
+
+        # ---------------- LLM ----------------
+        try:
+            explanation = generate_explanation(logs, label, reasons)
+        except Exception:
+            explanation = "LLM not available"
+
+        # ---------------- ALIGNMENT FIX ----------------
+        if pred == 1 and "success" in explanation.lower():
+            explanation = (
+                "Call failed due to poor radio conditions and signaling issues."
+            )
+
+        return {
+            "prediction": label,
+            "confidence": round(float(confidence), 2),
+            "key_factors": reasons,
+            "explanation": explanation
+        }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}

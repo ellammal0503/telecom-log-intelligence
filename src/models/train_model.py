@@ -1,53 +1,116 @@
 import pandas as pd
 import joblib
-import os
 
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
+
+from xgboost import XGBClassifier
+from sklearn.model_selection import cross_val_score
 
 
-def train_model():
-
-    print("Loading feature dataset...")
+# ---------------- LOAD DATA ----------------
+def load_data():
     df = pd.read_csv("data/processed/features.csv")
-
-    FEATURES = [
-        "rrc_fail",
-        "ho_fail",
-        "packet_loss",
-        "latency",
-        "bgp_down",
-        "if_down"
-    ]
-
-    X = df[FEATURES]
+    X = df.drop(columns=["callId", "target"])
     y = df["target"]
+    return X, y
+
+
+# ---------------- TRAIN ----------------
+def train_model():
+    print("Loading dataset...")
+    X, y = load_data()
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.3, stratify=y, random_state=42
     )
 
-    print("Training model...")
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
 
-    model = RandomForestClassifier(
+    # ---------------- RANDOM FOREST ----------------
+    rf = RandomForestClassifier(
         n_estimators=200,
-        max_depth=8,
-        class_weight="balanced",  # ✅ important
-        random_state=42
+        max_depth=10,
+        class_weight="balanced",
+        random_state=42,
+        n_jobs=-1
     )
 
-    model.fit(X_train, y_train)
+    # ---------------- XGBOOST ----------------
+    xgb = XGBClassifier(
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.05,
+        scale_pos_weight=2,   # imbalance handling
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42,
+        eval_metric="logloss"
+    )
 
-    print("Evaluating model...\n")
+    print("\nTraining Random Forest...")
+    rf.fit(X_train, y_train)
 
-    y_pred = model.predict(X_test)
-    print(classification_report(y_test, y_pred, zero_division=0))
+    print("Training XGBoost...")
+    xgb.fit(X_train, y_train)
 
-    os.makedirs("models", exist_ok=True)  # ✅ create folder if not exists
-    joblib.dump(model, "src/models/rf_model.pkl")
+    # ✅ ADD THIS BLOCK HERE
+    from sklearn.model_selection import cross_val_score
 
-    print("✅ Model saved at models/rf_model.pkl")
+    print("\nRunning Cross Validation...")
+    rf_cv = cross_val_score(rf, X, y, cv=5, scoring="roc_auc")
+    xgb_cv = cross_val_score(xgb, X, y, cv=5, scoring="roc_auc")
+
+    print("RF CV ROC-AUC:", rf_cv.mean())
+    print("XGB CV ROC-AUC:", xgb_cv.mean())
+
+    # ---------------- EVALUATION ----------------
+    print("\n===== RANDOM FOREST =====")
+    rf_pred = rf.predict(X_test)
+    rf_prob = rf.predict_proba(X_test)[:, 1]
+
+    print(classification_report(y_test, rf_pred))
+    print("ROC-AUC:", roc_auc_score(y_test, rf_prob))
+
+    print("\n===== XGBOOST =====")
+    xgb_pred = xgb.predict(X_test)
+    xgb_prob = xgb.predict_proba(X_test)[:, 1]
+
+    print(classification_report(y_test, xgb_pred))
+    print("ROC-AUC:", roc_auc_score(y_test, xgb_prob))
+    
+    # ✅ ADD THIS BLOCK HERE
+    import pandas as pd
+
+    print("\nFeature Importance (Random Forest):")
+    feat_imp = pd.Series(rf.feature_importances_, index=X.columns)
+    print(feat_imp.sort_values(ascending=False))
+    feat_imp.sort_values(ascending=False).to_csv("models/feature_importance.csv")
+
+    # ✅ ADD THIS BLOCK HERE
+    from sklearn.model_selection import cross_val_score
+
+    print("\nRunning Cross Validation...")
+    rf_cv = cross_val_score(rf, X, y, cv=5, scoring="roc_auc")
+    xgb_cv = cross_val_score(xgb, X, y, cv=5, scoring="roc_auc")
+
+    print("RF CV ROC-AUC:", rf_cv.mean())
+    print("XGB CV ROC-AUC:", xgb_cv.mean())
+
+    
+
+    # ---------------- SAVE ----------------
+    joblib.dump(rf, "models/rf_model.pkl")
+    joblib.dump(xgb, "models/xgb_model.pkl")
+    joblib.dump(scaler, "models/scaler.pkl")
+
+    print("\n✅ Both models saved!")
+
+    return rf, xgb, scaler
 
 
 if __name__ == "__main__":

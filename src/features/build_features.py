@@ -1,78 +1,129 @@
 import pandas as pd
+import re
 
-def build_features():
+# ---------------- PARSER ----------------
+def parse_logs(file_path="data/raw/telecom_logs.txt"):
+    rows = []
 
+    with open(file_path, "r") as f:
+        for line in f:
+            line = line.strip()
+
+            match = re.match(r"\[(.*?)\]\s(\w+)\s\|\s(.+)", line)
+            if not match:
+                continue
+
+            timestamp = match.group(1)
+            module = match.group(2)
+            rest = match.group(3)
+
+            fields = {"timestamp": timestamp, "module": module}
+
+            for item in rest.split("|"):
+                if "=" in item:
+                    k, v = item.strip().split("=", 1)
+                    fields[k.strip()] = v.strip()
+
+            rows.append(fields)
+
+    return pd.DataFrame(rows)
+
+
+# ---------------- FEATURE ENGINEERING ----------------
+def build_features(df):
+
+    df["event"] = df["event"].fillna("UNKNOWN")
+
+    grouped = df.groupby("callId")
+
+    features = []
+
+    for call_id, group in grouped:
+        feature = {}
+        feature["callId"] = call_id
+
+        events = group["event"].tolist()
+
+        # ---------------- SAFE FEATURES (NO LEAKAGE) ----------------
+        #feature["num_events"] = len(events)
+
+        # Success indicators (allowed)
+        #feature["rrc_success"] = int("RRC_SETUP_COMPLETE" in events)
+        #feature["reg_success"] = int("REGISTRATION_ACCEPT" in events)
+        #feature["sip_success"] = int("200 OK" in events)
+        #feature["ho_success"] = int("HO_SUCCESS" in events)
+        feature["rrc_attempts"] = events.count("RRC_SETUP_REQUEST")
+        feature["retries"] = events.count("RECOVERY_ATTEMPT")
+        feature["handover_attempts"] = events.count("HO_ATTEMPT")
+        #feature["sip_trying"] = events.count("100 Trying")
+        #feature["sip_ringing"] = events.count("180 Ringing")
+        feature["sip_progress"] = (events.count("100 Trying") + events.count("180 Ringing")
+)
+
+        # Behavior indicators (NOT direct failure flags)
+        feature["rrc_reconfig"] = int("RRC_RECONFIGURATION" in events)
+
+        # ---------------- KPI FEATURES ----------------
+        sinr_vals, rsrp_vals, latency_vals = [], [], []
+
+        for _, row in group.iterrows():
+
+            if "sinr" in row:
+                try:
+                    sinr_vals.append(float(row["sinr"]))
+                except:
+                    pass
+
+            if "rsrp" in row:
+                try:
+                    rsrp_vals.append(float(row["rsrp"]))
+                except:
+                    pass
+
+            if "latency_ms" in row:
+                try:
+                    latency_vals.append(float(row["latency_ms"]))
+                except:
+                    pass
+
+        feature["avg_sinr"] = sum(sinr_vals)/len(sinr_vals) if sinr_vals else 0
+        feature["avg_rsrp"] = sum(rsrp_vals)/len(rsrp_vals) if rsrp_vals else 0
+        feature["avg_latency"] = sum(latency_vals)/len(latency_vals) if latency_vals else 0
+
+        # ---------------- TARGET (REALISTIC) ----------------
+        # SUCCESS only if full flow completes
+        if "200 OK" in events and "RRC_SETUP_COMPLETE" in events:
+            feature["target"] = 0   # SUCCESS
+        else:
+            feature["target"] = 1   # FAIL
+
+        features.append(feature)
+
+    feature_df = pd.DataFrame(features)
+
+    # 🔥 FIX NAN ISSUE
+    feature_df = feature_df.fillna(0)
+
+    return feature_df
+
+
+# ---------------- PIPELINE ----------------
+def run_feature_pipeline():
     print("Loading logs...")
+    df = parse_logs()
 
-    sip = pd.read_csv("data/raw/sip_logs.csv")
-    rrc = pd.read_csv("data/raw/rrc_logs.csv")
-    csr = pd.read_csv("data/raw/csr_logs.csv")
+    print("Building features...")
+    feature_df = build_features(df)
 
-    # -----------------------------
-    # SIP FEATURES
-    # -----------------------------
-    sip["is_failure"] = sip["sip_message"].str.contains("408|486|500").astype(int)
+    feature_df.to_csv("data/processed/features.csv", index=False)
 
-    sip["timeout"] = sip["sip_message"].str.contains("408").astype(int)
-    sip["busy"] = sip["sip_message"].str.contains("486").astype(int)
-    sip["server_error"] = sip["sip_message"].str.contains("500").astype(int)
-
-    sip_features = sip.groupby("call_id").agg({
-        "is_failure": "max",
-        "timeout": "sum",
-        "busy": "sum",
-        "server_error": "sum"
-    }).reset_index()
-
-    sip_features.rename(columns={"is_failure": "target"}, inplace=True)
-
-    # -----------------------------
-    # RRC FEATURES
-    # -----------------------------
-    rrc["rrc_fail"] = (rrc["rrc_event"] == "RRC_SETUP_FAILURE").astype(int)
-    rrc["ho_fail"] = (rrc["rrc_event"] == "HO_FAILURE").astype(int)
-
-    rrc_features = rrc.groupby("call_id").agg({
-        "rrc_fail": "sum",
-        "ho_fail": "sum"
-    }).reset_index()
-
-    # -----------------------------
-    # CSR FEATURES (FIXED)
-    # -----------------------------
-    # Map CSR events to numeric signals
-    csr["packet_loss"] = (csr["event"] == "HIGH_PACKET_LOSS").astype(int)
-    csr["latency"] = (csr["event"] == "HIGH_LATENCY").astype(int)
-    csr["bgp_down"] = (csr["event"] == "BGP_DOWN").astype(int)
-    csr["if_down"] = (csr["event"] == "IF_DOWN").astype(int)
-
-    # ⚠️ CSR has no call_id → simulate mapping
-    csr["call_id"] = csr.index % len(sip_features)
-
-    csr_features = csr.groupby("call_id").agg({
-        "packet_loss": "sum",
-        "latency": "sum",
-        "bgp_down": "sum",
-        "if_down": "sum"
-    }).reset_index()
-
-    # -----------------------------
-    # MERGE ALL
-    # -----------------------------
-    df = sip_features.merge(rrc_features, on="call_id", how="left")
-    df = df.merge(csr_features, on="call_id", how="left")
-
-    df.fillna(0, inplace=True)
-
-    # -----------------------------
-    # DEBUG (IMPORTANT)
-    # -----------------------------
     print("\nTarget Distribution:")
-    print(df["target"].value_counts())
+    print(feature_df["target"].value_counts())
 
-    # -----------------------------
-    # SAVE
-    # -----------------------------
-    df.to_csv("data/processed/features.csv", index=False)
+    print("✅ Features saved!")
 
-    print("✅ Features saved to data/processed/features.csv")
+    return feature_df
+
+
+if __name__ == "__main__":
+    run_feature_pipeline()
